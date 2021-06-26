@@ -6,6 +6,10 @@ This code detects the presence of a person and triggers a midi signal.
 
 ## Setup
 ```
+# Download project
+git clone https://github.com/sasha42/FOLNUI-BIG.git
+cd FOLNUI-BIG/
+
 # Set up virtual env
 sudo pip3 install virtualenv
 virtualenv venv

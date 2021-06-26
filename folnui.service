@@ -1,0 +1,14 @@
+[Unit]
+Description=Music LED experience
+After=multi-user.target
+
+[Service]
+Environment="PATH=/home/pi/repositories/FOLNUI-BIG/venv/bin"
+WorkingDirectory=/home/pi/repositories/FOLNUI-BIG/
+ExecStart=/bin/bash -c '/home/pi/repositories/FOLNUI-BIG/venv/bin/python /home/pi/repositories/FOLNUI-BIG/music.py > /home/pi/musicled.log 2>&1'
+RemainAfterExit=no
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
