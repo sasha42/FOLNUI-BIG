@@ -12,6 +12,10 @@ prompt-toolkit==3.0.19
 ptyprocess==0.7.0
 Pygments==2.9.0
 python-rtmidi==1.4.9
+redis==3.5.3
+rlog==0.3
 RPi.GPIO==0.7.0
 traitlets==5.0.5
+ujson==4.0.2
 wcwidth==0.2.5
+websockets==9.1

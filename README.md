@@ -17,6 +17,7 @@ source venv/bin/activate
 
 # Install the dependencies
 pip install -r requirements.txt
+sudo apt-get install redis-server
 
 # Create a system service that starts on boot
 sudo cp folnui.service /lib/systemd/system/folnui.service
