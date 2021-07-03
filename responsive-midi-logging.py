@@ -21,36 +21,43 @@ GPIO.setwarnings(False)
 # GPIO pins, set up nominal and threshold values
 sensors = {
     "1": {"gpioPin": 4,
+          "midiChannel": 61,
           "active": True,
           "lastVals": [],
           "nominal": 70,
           "threshold": 35},
     "2": {"gpioPin": 17,
+          "midiChannel": 62,
           "active": True,
           "lastVals": [],
           "nominal": 70,
           "threshold": 35},
     "3": {"gpioPin": 18,
+          "midiChannel": 63,
           "active": True,
           "lastVals": [],
           "nominal": 70,
           "threshold": 35},
     "4": {"gpioPin": 27,
+          "midiChannel": 64,
           "active": True,
           "lastVals": [],
           "nominal": 70,
           "threshold": 35},
     "5": {"gpioPin": 22,
+          "midiChannel": 65,
           "active": True,
           "lastVals": [],
           "nominal": 70,
           "threshold": 35},
     "6": {"gpioPin": 23,
+          "midiChannel": 66,
           "active": True,
           "lastVals": [],
           "nominal": 70,
           "threshold": 35},
     "7": {"gpioPin": 25,
+          "midiChannel": 67,
           "active": False,
           "lastVals": [],
           "nominal": 0,
@@ -63,7 +70,7 @@ def setupSensor(sensor):
     measures the nominal values to calculate a threshold trigger value."""
     try:
         # Timeout after 5s if the sensor isn't connected
-        with timeout(5):
+        with timeout(3):
             # Get the sensor pin
             pin = sensors[sensor]["gpioPin"]
 
@@ -85,10 +92,10 @@ def setupSensor(sensor):
             #global sensors
             sensors[sensor]["nominal"] = nominal
             sensors[sensor]["threshold"] = int(nominal/2)  # use as sensitivity
-            print(f"Set {sensor} to nominal {nominal} cm")
+            print(f"[{sensor}] to nominal {nominal} cm")
     except:
         # sensors[sensor]["active"] = False # DANGER
-        print(f"Set {sensor} to inactive")
+        print(f"[{sensor}] is inactive, not modifying anything")
 
 
 def measureSensor(gpioPin):
@@ -184,30 +191,44 @@ def calculateTrigger(s, distance):
     #print(f"[{s}] value {value}")
     # If less than 25 for last 3 values
     if value >= 2:
-        print(f"[{s}] four low vals continuously")
+        #print(f"[{s}] four low vals continuously")
         return True
     else:
         return False
+
+
+def detectMidiDevice():
+    """Automatically detects primary midi device, ignoring the built in 
+    virtual ones. Returns either none or the name of the device."""
+    # Get devices
+    devices = mido.get_output_names()  # Get names of devices
+    
+    # Remove built in devices for PI
+    devices.remove('Midi Through:Midi Through Port-0 14:0')
+    devices.remove('Midi Through:Midi Through Port-0 14:0')
+
+    if len(devices) >= 1:
+        output = mido.open_output(devices[0])
+        print(f'[MIDI] Connected to MIDI on {devices[0]}')
+        return output
+    else:
+        print('[MIDI] No midi devices found')
+        return None
 
 
 async def hello():
     # Setup websocket to ws-server.py
     uri = "ws://localhost:6789"
     async with websockets.connect(uri, ping_interval=None) as websocket:
-        # Connect to midi
-        # try:
-        devices = mido.get_output_names()  # Get names of devices
-        print(devices)
-        # logger.info(devices)
-        # try:
-        #    output = mido.open_output('ESI MIDIMATE eX:ESI MIDIMATE eX MIDI 1 24:0')
-        # except OSError as e:
-        #    logger.error("Cannot find midi device")
+        output = detectMidiDevice()
 
         # Read sensor data in a loop
         while True:
+            # Count number of simultaneous sensors on
+            simultaneous = 0
             for s in sensors:
                 if sensors[s]["active"]:  # Only read active sensors
+                    
                     with timeout(1): # Timeout if it takes too long
                         pin = sensors[s]["gpioPin"]
                         try:
@@ -217,9 +238,18 @@ async def hello():
                             # Calculate trigger
                             trigger = calculateTrigger(s, distance)
 
-                            # Send over midi if triggered
-                            if trigger:
-                                print('we should send over midi')
+                            # Send over midi if triggered and we have midi
+                            if trigger and output:
+                                # Determine note to send
+                                note = sensors[s]["midiChannel"]
+
+                                # Send MIDI note
+                                msg = mido.Message('note_on', note=note)
+                                output.send(msg)
+                                print(f"[MIDI] Note on channel {note} from sensor {s}")
+
+                                # Add to simultaneous output
+                                simultaneous += 1
 
                             # Send over websockets
                             await websocket.send(json.dumps({
@@ -229,10 +259,20 @@ async def hello():
                                 'threshold': sensors[s]["threshold"]
                             }))
                         except:
-                            print(f"Failed reading {s}")
+                            print(f"[{s}] Failed reading")
                         
                         # Safety sleep between each sensor
                         time.sleep(0.01)
+
+            # Send special note if multiple sensors triggered at once
+            if (simultaneous >= 2) and output:
+                # Start counting channels at 70 for each simulataneous sense
+                note = 70+simultaneous
+
+                # Send MIDI note
+                msg = mido.Message('note_on', note=note)
+                output.send(msg)
+                print(f"[MIDI] Simultaneous {simultaneous} sensors detected, sending note {note}")
 
             # Safety sleep between each loop
             await asyncio.sleep(0.01)
