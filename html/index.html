@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>FOLNUI</title>
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
+    <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#5bbad5">
+    <meta name="msapplication-TileColor" content="#da532c">
+    <meta name="theme-color" content="#ffffff">
+    <style type="text/css">
+      body {
+        font-family: "Courier New", sans-serif;
+        text-align: center;
+      }
+      .buttons {
+        font-size: 3em;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+      }
+      .button,
+      .value {
+        line-height: 1;
+        padding: 2rem;
+        margin: 2rem;
+        border: medium solid;
+        min-height: 1em;
+        min-width: 1em;
+      }
+      .button {
+        cursor: pointer;
+        user-select: none;
+      }
+      .value {
+        min-width: 2em;
+      }
+      .state {
+        font-size: 2em;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="buttons">
+      <div class="value" id="val1">?</div>
+      <div class="value" id="val2">?</div>
+      <div class="value" id="val3">?</div>
+      <div class="value" id="val4">?</div>
+      <div class="value" id="val5">?</div>
+      <div class="value" id="val6">?</div>
+      <div class="value" id="val7">?</div>
+    </div>
+    <script>
+      function parseEvent(eventData) {
+        // Clean up sensor value so that we have 3 int output
+        let cleanVal = eventData.value.toLocaleString("en-US", {
+          minimumIntegerDigits: 3,
+          useGrouping: false,
+        });
+
+        // Get the right div
+        let sensor = eventData.sensor;
+        let sensorName = "#val" + sensor;
+        let elem = document.querySelector(sensorName);
+
+        // Update the data in the div
+        elem.textContent = "[" + sensor + "] " + cleanVal + "cm";
+
+        // Change background on trigger
+	if (eventData.trigger === true) {
+          elem.style.backgroundColor = "#ccccff";
+        } else {
+          elem.style.backgroundColor = "#ffffff";
+        }
+      }
+
+      //   var value = document.querySelector(".value"),
+      //     val1 = document.querySelector("#val1");
+      //   val2 = document.querySelector("#val2");
+      websocket = new WebSocket("ws://10.0.0.226:6789/");
+      //minus.onclick = function (event) {
+      //    websocket.send(JSON.stringify({action: 'minus'}));
+      //}
+      //plus.onclick = function (event) {
+      //    websocket.send(JSON.stringify({action: 'plus'}));
+      //}
+      websocket.onmessage = function (event) {
+        data = JSON.parse(event.data);
+        parseEvent(data);
+        //console.log(data)
+        // let cleanVal = data.value.toLocaleString("en-US", {
+        //   minimumIntegerDigits: 3,
+        //   useGrouping: false,
+        // });
+
+        // if (data.sensor === 4) {
+        //   if (cleanVal < 40) {
+        //     val1.style.backgroundColor = "#ccccff";
+        //   } else {
+        //     val1.style.backgroundColor = "#ffffff";
+        //   }
+        //   val1.textContent = cleanVal;
+        // } else if (data.sensor === 17) {
+        //   val2.textContent = cleanVal;
+        // }
+
+        //switch (data.sensor) {
+        //    case 4:
+        //        val1.textContent = data.value;
+        //        console.log('four value')
+        //    case 17:
+        //        val2.textContent = data.value;
+        //    case 18:
+        //        val3.textContent = data.value;
+        //case 'state':
+        //    value.textContent = data.value;
+        //    break;
+        //case 'users':
+        //    users.textContent = (
+        //        data.count.toString() + " user" +
+        //        (data.count == 1 ? "" : "s"));
+        //    break;
+        //    default:
+        //        console.error(
+        //            "unsupported event", data);
+        //}
+      };
+    </script>
+  </body>
+</html>
