@@ -11,69 +11,58 @@ import websockets
 import json
 import statistics
 
-# Use redis for logs
-# logger = logging.getLogger()
-# logger.addHandler(RedisHandler(channel='logs'))
-# logger.setLevel(logging.DEBUG)
 
-# Log stdout stuff
-# handler = logging.StreamHandler(sys.stdout)
-# handler.setLevel(logging.DEBUG)
-# formatter = logging.Formatter('%(asctime)s: %(message)s', "%H:%M:%S")
-# handler.setFormatter(formatter)
-# logger.addHandler(handler)
-
-# Use global state for whether someone is detected under sensor
-# detected = False
-
-# Use BCM GPIO references
-# instead of physical pin numbers
+# Use BCM GPIO references instead of physical pin numbers
 GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
 
-# Define GPIO to use on Pi
-# GPIO_TRIGECHO = 4
-# GPIO_PINS = [4, 17, 18, 27, 22, 23, 25]
-# sensors = [4, 17, 18, 27, 22, 25]
-# sensors = [4, 17, 18]
-# sensors = [4, 17]
+
+# Configure the sensors used: map their names and midi channels to
+# GPIO pins, set up nominal and threshold values
 sensors = {
     "1": {"gpioPin": 4,
           "active": True,
-          "nominal": 0,
-          "threshold": 0},
+          "lastVals": [],
+          "nominal": 70,
+          "threshold": 35},
     "2": {"gpioPin": 17,
           "active": True,
-          "nominal": 0,
-          "threshold": 0},
+          "lastVals": [],
+          "nominal": 70,
+          "threshold": 35},
     "3": {"gpioPin": 18,
           "active": True,
-          "nominal": 0,
-          "threshold": 0},
+          "lastVals": [],
+          "nominal": 70,
+          "threshold": 35},
     "4": {"gpioPin": 27,
           "active": True,
-          "nominal": 0,
-          "threshold": 0},
+          "lastVals": [],
+          "nominal": 70,
+          "threshold": 35},
     "5": {"gpioPin": 22,
           "active": True,
-          "nominal": 0,
-          "threshold": 0},
+          "lastVals": [],
+          "nominal": 70,
+          "threshold": 35},
     "6": {"gpioPin": 23,
-          "active": False,
-          "nominal": 0,
-          "threshold": 0},
-    "7": {"gpioPin": 25,
           "active": True,
+          "lastVals": [],
+          "nominal": 70,
+          "threshold": 35},
+    "7": {"gpioPin": 25,
+          "active": False,
+          "lastVals": [],
           "nominal": 0,
           "threshold": 0},
 }
 
-# logger.info("Ultrasonic Measurement")
-
 
 def setupSensor(sensor):
-    """Sets up a sensor by configuring the GPIO parameters for it"""
+    """Sets up a sensor by configuring the GPIO parameters for it, and 
+    measures the nominal values to calculate a threshold trigger value."""
     try:
+        # Timeout after 5s if the sensor isn't connected
         with timeout(5):
             # Get the sensor pin
             pin = sensors[sensor]["gpioPin"]
@@ -98,7 +87,7 @@ def setupSensor(sensor):
             sensors[sensor]["threshold"] = int(nominal/2)  # use as sensitivity
             print(f"Set {sensor} to nominal {nominal} cm")
     except:
-        sensors[sensor]["active"] = False
+        # sensors[sensor]["active"] = False # DANGER
         print(f"Set {sensor} to inactive")
 
 
@@ -130,33 +119,6 @@ def measureSensor(gpioPin):
     return int(distance)
 
 
-def measure():
-  # This function measures a distance
-  # Pulse the trigger/echo line to initiate a measurement
-    GPIO.output(GPIO_TRIGECHO, True)
-    time.sleep(0.00001)
-    GPIO.output(GPIO_TRIGECHO, False)
-  # ensure start time is set in case of very quick return
-    start = time.time()
-
-  # set line to input to check for start of echo response
-    GPIO.setup(GPIO_TRIGECHO, GPIO.IN)
-    while GPIO.input(GPIO_TRIGECHO) == 0:
-        start = time.time()
-
-  # Wait for end of echo response
-    while GPIO.input(GPIO_TRIGECHO) == 1:
-        stop = time.time()
-
-    GPIO.setup(GPIO_TRIGECHO, GPIO.OUT)
-    GPIO.output(GPIO_TRIGECHO, False)
-
-    elapsed = stop-start
-    distance = (elapsed * 34300)/2.0
-    time.sleep(0.1)
-    return distance
-
-
 def changeLights(distance, bulbs):
     """Change lights based on distance"""
 
@@ -180,57 +142,107 @@ def changeLights(distance, bulbs):
         logger.info('On')
 
 
-async def hello():
-    uri = "ws://localhost:6789"
-    # while True:
-    # websocket= await websockets.connect(uri, ping_interval=None)
+# def calculateTrigger(s, distance):
+#    """Calculates whether to trigger a signal based on activity
+#    below the sensor"""
+#
+#    # Append the latest value
+#    sensors[s]["lastVals"].append(distance)
+#
+#    # Make sure we only have 3 vals
+#    sensors[s]["lastVals"] = sensors[s]["lastVals"][-3:]
+#
+#    # Get mean of last 3 vals
+#    value = 0
+#    for v in sensors[s]["lastVals"]:
+#        value += v
+#
+#    #print(f"[{s}] value {value}")
+#    # If less than 25 for last 3 values
+#    if value/3 < 30:
+#        print(f"[{s}] value {int(value/3)} actually close {s}")
 
-    # if not websocket.open:
-    #    print ('Websocket NOT connected. Trying to reconnect.')
-    #    websocket= await websockets.connect(uri, ping_interval=None)
-    #    msg = json.dumps({"event":"pusher:subscribe","data":{"channel":"order_book"}})
-    #    await websocket.send(msg)
+
+def calculateTrigger(s, distance):
+    """Calculates whether to trigger a signal based on activity
+    below the sensor"""
+
+    # Append the latest value
+    sensors[s]["lastVals"].append(distance)
+
+    # Make sure we only have 3 vals
+    sensors[s]["lastVals"] = sensors[s]["lastVals"][-2:]
+
+    # Get mean of last 3 vals
+    value = 0
+    for v in sensors[s]["lastVals"]:
+        if v < sensors[s]['threshold']:
+            value += 1
+        else:
+            value -= 1
+
+    #print(f"[{s}] value {value}")
+    # If less than 25 for last 3 values
+    if value >= 2:
+        print(f"[{s}] four low vals continuously")
+        return True
+    else:
+        return False
+
+
+async def hello():
+    # Setup websocket to ws-server.py
+    uri = "ws://localhost:6789"
     async with websockets.connect(uri, ping_interval=None) as websocket:
-        # try:
         # Connect to midi
+        # try:
         devices = mido.get_output_names()  # Get names of devices
+        print(devices)
         # logger.info(devices)
         # try:
         #    output = mido.open_output('ESI MIDIMATE eX:ESI MIDIMATE eX MIDI 1 24:0')
         # except OSError as e:
         #    logger.error("Cannot find midi device")
 
+        # Read sensor data in a loop
         while True:
-            for gpioPin in sensors:
-                try:
-                    with timeout(1):
+            for s in sensors:
+                if sensors[s]["active"]:  # Only read active sensors
+                    with timeout(1): # Timeout if it takes too long
+                        pin = sensors[s]["gpioPin"]
                         try:
-                            distance = measureSensor(gpioPin)
-                        except:
-                            print(f"fail on {gpioPin}")
-                        clean_dist = int(distance)
-                        reading = str(gpioPin) + ": " + str(clean_dist)
-                        # logger.info(reading)
-                        await websocket.send(json.dumps({'value': clean_dist, 'sensor': gpioPin}))
-                        # changeLights(distance, output)
-                        time.sleep(0.01)
-                except RuntimeError as e:
-                    logger.error(str(e))
-                    time.sleep(1)
+                            # Measure distance
+                            distance = measureSensor(pin)
 
-            # await websocket.ping()
-            # await websocket.send(json.dumps({'action': 'plus'}))
+                            # Calculate trigger
+                            trigger = calculateTrigger(s, distance)
+
+                            # Send over midi if triggered
+                            if trigger:
+                                print('we should send over midi')
+
+                            # Send over websockets
+                            await websocket.send(json.dumps({
+                                'value': distance,
+                                'sensor': s,
+                                'trigger': trigger,
+                                'threshold': sensors[s]["threshold"]
+                            }))
+                        except:
+                            print(f"Failed reading {s}")
+                        
+                        # Safety sleep between each sensor
+                        time.sleep(0.01)
+
+            # Safety sleep between each loop
             await asyncio.sleep(0.01)
             # time.sleep(1)
 
-        # except KeyboardInterrupt:
-        #    logger.info("Stop")
-        #    GPIO.cleanup()
 
 if __name__ == "__main__":
     # Setup the GPIO for each sensor
     for sensor in sensors:
         setupSensor(sensor)
-    
+
     # Start async event loop
     asyncio.get_event_loop().run_until_complete(hello())
