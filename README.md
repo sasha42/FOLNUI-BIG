@@ -1,10 +1,26 @@
 # FOLNUI BIG installation
 
-Code for an art installation.
+* ✨  Code for an interactive **art installation**
+* 💁‍♀️  **Detect people** with ultrasonic sensors
+* 🎹  Send out a MIDI to trigger **animations in Madmapper**
 
-This code detects the presence of a person and triggers a midi signal.
+## Functionality
+At boot, the code will perform the following:
+1. **Calibrate sensors** on boot, the code will calibrate the nominal and threshold valuse for the sensors, so that it can automatically detect the distance
+2. **Pick a MIDI device** next, where it will choose the first MIDI device (typically on USB)
+3. **Connect to websocket** it will then connect to an internal websocket server, so that you can monitor what's happening from your phone
+
+After booting, it will run the following loop:
+1. **Measure distance** for each sensor
+2. **Check threshold** to see if the distance is within our trigger distance (e.g. the sensor detects a person underneath it)
+3. **Check last values** if the distance is within the trigger distance, check whether the last measured value also detected a person
+4. **Send MIDI and Websocket signal** if the last 2 values triggered for a sensor, send out a MIDI note (*e.g. Note On for Note 60*) and Websocket message
+4. **Check multiple sensors** if there are multiple sensors, send another MIDI note based on number of simultaneous triggers (*e.g. Note On on Note 72 for 2 sensors triggered simultaneously**)
+
+The above loop runs at approximately 10fps.
 
 ## Setup
+The project is intended to run on a Raspberry Pi. Basic knowledge of how to use the linux command line is assumed.
 ```
 # Download project
 git clone https://github.com/sasha42/FOLNUI-BIG.git
@@ -17,34 +33,42 @@ source venv/bin/activate
 
 # Install the dependencies
 pip install -r requirements.txt
-sudo apt-get install redis-server
 
-# Create a system service that starts on boot
-sudo cp folnui.service /lib/systemd/system/folnui.service
-systemctl start folnui
-systemctl enable folnui
+# Create a websocket service that starts on boot
+sudo cp folnui-websocket.service /lib/systemd/system/folnui-websocket.service
+systemctl start folnui-websocket
+systemctl enable folnui-websocket
+
+# Create sensor reading service to start on boot
+sudo cp folnui-sensor.service /lib/systemd/system/folnui-sensor.service
+systemctl start folnui-sensor
+systemctl enable folnui-sensor
 
 # Reboot pi, everything should run after reboot
 sudo reboot
 ```
 
 ## Config
-There is a lot of hardcoded stuff because this codebase was written in a day.
-
-**MIDI device**
-Uncomment the code on line 77 of `responsive-midi.py` to get a list of MIDI USB devices. Copy the name of the device you want to use, and put it into line 78. It should look like this:
+After running the code on the Pi, you should be able to connect automatically to 7 sensors and a MIDI output device. You can configure the sensors ahead of time in the `responsive-midi-logging.py` file, where you'll see stuff like this:
 ```
-output = mido.open_output('ESI MIDIMATE eX:ESI MIDIMATE eX MIDI 1 24:0')
+    "1": {"gpioPin": 4,
+          "midiChannel": 61,
+          "active": True,
+          "lastVals": [],
+          "nominal": 70,
+          "threshold": 35}
 ```
 
-**Detection sensitivity**
-The sensor is very sensitive and can provide a fairly accurate measurement. We do not use accuracy and instad have a binary thing. Super hacky code can be found between lines 57 and 69 of `responsive-midi.py`.
+This enables you to change a bunch of stuff:
+* **gpioPin**: BCM pin of the Raspberr Pi GPIO to which the sensor is connected to
+* **midiChannel**: MIDI channel where a note will be sent to when sensor is triggered
+* **active**: Boolean of whether this sensor is active or not, in case a sensor is missing
+* **lastVals**: List for internal use - do not modify
+* **nominal**: The default distance **Note: the code calibrates on start and sets this value itself**
+* **threshold**: Trigger threshold for the sensor, beyond this distance it will trigger
 
- he two key changes are the following, to be adjusted to the height of where the sensor is located:
-```
-max_distance = 268.4
-min_distance = 50.5
-``` 
+The Pi will automatically connect to the first MIDI device it sees. If there's no MIDI device, nothing will happen.
 
-**Distance measurement**
-Run `python distance.py` to get the distance from the sensor.
+---
+
+❤️
