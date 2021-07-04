@@ -1,0 +1,15 @@
+[Unit]
+Description=FOLNUI sensor code
+After=multi-user.target
+
+[Service]
+Environment="PATH=/home/pi/FOLNUI-BIG/venv/bin"
+WorkingDirectory=/home/pi/FOLNUI-BIG/
+ExecStart=/bin/bash -c '/home/pi/FOLNUI-BIG/venv/bin/python /home/pi/FOLNUI-BIG/responsive-midi-logging.py > /home/pi/sensor.log 2>&1'
+RemainAfterExit=no
+Restart=on-failure
+RestartSec=5s
+Type=idle
+
+[Install]
+WantedBy=multi-user.target
