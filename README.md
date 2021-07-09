@@ -29,7 +29,7 @@ cd FOLNUI-BIG/
 # Update your Pi and install packages
 sudo apt-get update
 sudo apt-get upgrade
-sudo apt-get install apache2 mosh vim hostapd dnsmasq
+sudo apt-get install apache2 mosh vim hostapd dnsmasq autossh
 
 # Set up virtual env
 sudo pip3 install virtualenv
@@ -56,6 +56,16 @@ sudo systemctl enable hostapd
 
 # Configure files for wifi access point
 sudo echo -e "interface wlan0\n  static ip_address=192.168.4.1/24\n  nohook wpa_supplicant" >> /etc/dhcpcd.conf
+sudo mv /etc/dnsmasq.conf /etc/dnsmasq.conf.orig
+sudo cp ~/FOLNUI-BIG/dnsmasq.conf /etc/dnsmasq.conf 
+sudo rfkill unblock wlan
+sudo cp ~/FOLNUI-BIG/hostapd.conf /etc/hostapd/hostapd.conf
+
+# Set up remote access
+nano ~/FOLNUI-BIG/autossh.service # Change the YOUR_IP section here with your real server IP
+sudo cp ~/FOLNUI-BIG/autossh.service /lib/systemd/system/autossh.service
+systemctl start autossh.service
+systemctl enable autossh.service
 
 # Copy html files into apache2 directory
 sudo cp ~/FOLNUI-BIG/html/* /var/www/html/.

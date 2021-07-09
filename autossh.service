@@ -1,0 +1,11 @@
+[Unit]
+Description=AutoSSH tunnel service to Sashas server
+After=network.target
+
+[Service]
+User=pi
+Environment="AUTOSSH_GATETIME=0"
+ExecStart=/usr/bin/autossh -M 0 -o "ServerAliveInterval 30" -o "ServerAliveCountMax 3" -i /home/pi/.ssh/id_rsa -NR 2222:localhost:22 -p 5000 sasha@YOUR_IP
+
+[Install]
+WantedBy=multi-user.target
