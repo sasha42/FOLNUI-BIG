@@ -17,12 +17,16 @@ GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
 
 
+# Set start time
+debug_time = int(time.time())
+
+
 # Configure the sensors used: map their names and midi channels to
 # GPIO pins, set up nominal and threshold values
 sensors = {
     "1": {"gpioPin": 4,
           "midiChannel": 61,
-          "active": True,
+          "active": False,
           "lastVals": [],
           "prevTrigger": False,
           "timeoutTasks": [],
@@ -245,6 +249,13 @@ async def setTriggerTimeout(timeout, coro):
     return await coro
 
 
+def logEvent(what):
+    cur_time = int(time.time())
+    writable = f'{cur_time};{what}\n'
+    with open(f'debug/{debug_time}.csv','a') as f:
+        f.write(writable)
+
+
 async def sendMidiOff(s, output):
     # Reset note lock
     sensors[s]['noteLock'] = False
@@ -253,6 +264,7 @@ async def sendMidiOff(s, output):
     note = sensors[s]["midiChannel"]
     msg = mido.Message('note_off', note=note)
     output.send(msg)
+    logEvent(f'midi;off;{s}')
     print(f"[MIDI] Note OFF channel {note} from sensor {s}")
 
 
@@ -293,6 +305,7 @@ async def hello():
                                 note = sensors[s]["midiChannel"]
                                 msg = mido.Message('note_on', note=note)
                                 output.send(msg)
+                                logEvent(f'midi;on;{s}')
                                 print(f"[MIDI] Note ON channel {note} from sensor {s}")
                             sensors[s]['noteLock'] = True
 
