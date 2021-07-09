@@ -26,6 +26,11 @@ The project is intended to run on a Raspberry Pi. Basic knowledge of how to use 
 git clone https://github.com/sasha42/FOLNUI-BIG.git
 cd FOLNUI-BIG/
 
+# Update your Pi and install packages
+sudo apt-get update
+sudo apt-get upgrade
+sudo apt-get install apache2 mosh vim hostapd dnsmasq
+
 # Set up virtual env
 sudo pip3 install virtualenv
 virtualenv venv
@@ -43,6 +48,17 @@ systemctl enable folnui-websocket
 sudo cp folnui-sensor.service /lib/systemd/system/folnui-sensor.service
 systemctl start folnui-sensor
 systemctl enable folnui-sensor
+
+# Set up the wifi access point
+sudo DEBIAN_FRONTEND=noninteractive apt install -y netfilter-persistent iptables-persistent
+sudo systemctl unmask hostapd
+sudo systemctl enable hostapd
+
+# Configure files for wifi access point
+sudo echo -e "interface wlan0\n  static ip_address=192.168.4.1/24\n  nohook wpa_supplicant" >> /etc/dhcpcd.conf
+
+# Copy html files into apache2 directory
+sudo cp ~/FOLNUI-BIG/html/* /var/www/html/.
 
 # Reboot pi, everything should run after reboot
 sudo reboot
