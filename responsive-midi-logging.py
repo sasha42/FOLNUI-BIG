@@ -10,6 +10,8 @@ import asyncio
 import websockets
 import json
 import statistics
+from threading import Thread
+
 
 
 # Use BCM GPIO references instead of physical pin numbers
@@ -19,6 +21,8 @@ GPIO.setwarnings(False)
 
 # Set start time
 debug_time = int(time.time())
+global_ping = []
+#simul = [] 
 
 
 # Configure the sensors used: map their names and midi channels to
@@ -26,7 +30,7 @@ debug_time = int(time.time())
 sensors = {
     "1": {"gpioPin": 4,
           "midiChannel": 61,
-          "active": False,
+          "active": True,
           "lastVals": [],
           "prevTrigger": False,
           "timeoutTasks": [],
@@ -124,8 +128,8 @@ def setupSensor(sensor):
         print(f"[{sensor}] is inactive, not modifying anything")
 
 
-def measureSensor(gpioPin):
-    """Measures the distnace of an individual sensor"""
+def noInterruptMeasure(data, gpioPin):
+    """Measures sensor values without interrupt"""
     # Pulse the trigger/echo line to initiate a measurement
     GPIO.output(gpioPin, True)
     time.sleep(0.00001)
@@ -149,7 +153,29 @@ def measureSensor(gpioPin):
     time.sleep(0.00001)
     elapsed = stop-start
     distance = (elapsed * 34300)/2.0
+    #print(str(gpioPin) + ' ' + str(distance))
+    data['value'] = int(distance)
     return int(distance)
+
+
+def measureSensor(gpioPin):
+    """Measures the distnace of an individual sensor"""
+    # Create an empty variable so that we can populate it with data,
+    # as threads do not return data normally
+    data = {'value': 0}
+
+    # Create a thread with a return value, which runs the measurement
+    # code with no interrupts
+    a = Thread(target=noInterruptMeasure, args=(data,), kwargs={'gpioPin': gpioPin})
+
+    # Start the thread
+    a.start()
+
+    # Join the thread to get the value back
+    a.join()
+
+    # Return the value
+    return data['value']
 
 
 def changeLights(distance, bulbs):
@@ -204,19 +230,20 @@ def calculateTrigger(s, distance):
     sensors[s]["lastVals"].append(distance)
 
     # Make sure we only have 3 vals
-    sensors[s]["lastVals"] = sensors[s]["lastVals"][-2:]
+    sensors[s]["lastVals"] = sensors[s]["lastVals"][-5:]
 
+    #print(sensors[s]["lastVals"])
     # Get mean of last 3 vals
     value = 0
     for v in sensors[s]["lastVals"]:
         if v < sensors[s]['threshold']:
             value += 1
-        else:
-            value -= 1
+        #else:
+        #    value -= 1
 
     #print(f"[{s}] value {value}")
     # If less than 25 for last 3 values
-    if value >= 2:
+    if value >= 5:
         #print(f"[{s}] four low vals continuously")
         return True
     else:
@@ -249,8 +276,41 @@ async def setTriggerTimeout(timeout, coro):
     return await coro
 
 
+async def sendMidiTimeout():
+    """Sends a timeout after threshold time was hit"""
+    cur_time = time.strftime('%Y-%m-%d %H:%M:%S')
+    print(f'Timeout at {cur_time}')
+
+
 def logEvent(what):
+    # Get current time
     cur_time = int(time.time())
+
+    # TODO FIXME handle the event here
+    action = what.split(';')[1]
+
+    timeout_time = 20*60 # 20 minutes in seconds
+    #if action == "on":
+    #    print(cur_time)
+        # Sorry it does this on the first sensor
+    # Set timeout signal task
+    if len(global_ping) == 0:
+    #if sensors[s]["timeoutTasks"]: 
+        # set first timeout task
+        global_ping.append(asyncio.create_task(setTriggerTimeout(timeout_time, sendMidiTimeout())))
+        #sensors[s]["timeoutTasks"] = asyncio.create_task(setTriggerTimeout(3, sendMidiOff()))
+    else:
+        for my_task in global_ping:
+            if not my_task.cancelled():
+                #print('cancelling')
+                my_task.cancel()
+            else:
+                #print('not cancelling')
+                my_task = None
+        #print('setting')
+        #print('reserting')
+        global_ping.append(asyncio.create_task(setTriggerTimeout(timeout_time, sendMidiTimeout())))
+
     writable = f'{cur_time};{what}\n'
     with open(f'debug/{debug_time}.csv','a') as f:
         f.write(writable)
@@ -265,7 +325,10 @@ async def sendMidiOff(s, output):
     msg = mido.Message('note_off', note=note)
     output.send(msg)
     logEvent(f'midi;off;{s}')
+    #if len(simul) != 0:
+    #     simul.pop() # remove last simul
     print(f"[MIDI] Note OFF channel {note} from sensor {s}")
+
 
 
 async def hello():
@@ -277,104 +340,112 @@ async def hello():
         # Read sensor data in a loop
         while True:
             # Count number of simultaneous sensors on
-            simultaneous = 0
+            simul = 0
 
             for s in sensors:
                 if sensors[s]["active"]:  # Only read active sensors
-                    
-                    with timeout(1): # Timeout if it takes too long
-                        # TODO split into function this entire section 
-                        pin = sensors[s]["gpioPin"]
-                        #try:
-                        # Measure distance
-                        distance = measureSensor(pin)
+                    try: 
+                        with timeout(1): # Timeout if it takes too long
+                            # TODO split into function this entire section 
+                            pin = sensors[s]["gpioPin"]
+                            #try:
+                            # Measure distance
+                            distance = measureSensor(pin)
 
-                        # Calculate trigger
-                        current_trigger = calculateTrigger(s, distance)
+                            # Calculate trigger
+                            current_trigger = calculateTrigger(s, distance)
 
-                        # Get previous trigger value
-                        prev_trigger = sensors[s]['prevTrigger']
+                            # Get previous trigger value
+                            prev_trigger = sensors[s]['prevTrigger']
 
-                        # Get the awaited timeout tasks
-                        timeout_tasks = sensors[s]['timeoutTasks'] 
-                        
+                            # Get the awaited timeout tasks
+                            timeout_tasks = sensors[s]['timeoutTasks'] 
+                            
 
-                        if (sensors[s]['noteLock'] == False) and (current_trigger == True):
-                            if output:
+                            if (sensors[s]['noteLock'] == False) and (current_trigger == True):
+                                if output:
+                                    # Send MIDI note
+                                    note = sensors[s]["midiChannel"]
+                                    msg = mido.Message('note_on', note=note)
+                                    output.send(msg)
+                                    logEvent(f'midi;on;{s}')
+                                    simul += 1
+                                    print(f"[MIDI] Note ON channel {note} from sensor {s}")
+                                sensors[s]['noteLock'] = True
+
+                            if current_trigger == True:
+                                #print(len(timeout_tasks))
+                                if len(timeout_tasks) == 0:
+                                #if sensors[s]["timeoutTasks"]: 
+                                    # set first timeout task
+                                    sensors[s]["timeoutTasks"].append(asyncio.create_task(setTriggerTimeout(3, sendMidiOff(s, output))))
+                                    #sensors[s]["timeoutTasks"] = asyncio.create_task(setTriggerTimeout(3, sendMidiOff()))
+                                else:
+                                    for my_task in sensors[s]["timeoutTasks"]:
+                                        if not my_task.cancelled():
+                                            #print('cancelling')
+                                            my_task.cancel()
+                                        else:
+                                            #print('not cancelling')
+                                            my_task = None
+                                    #print('setting')
+                                    #print('reserting')
+                                    sensors[s]["timeoutTasks"].append(asyncio.create_task(setTriggerTimeout(3, sendMidiOff(s, output))))
+                                # pop last push first out
+                            # Take action only if the previous states were off
+                            ## check if there are active coroutines
+                            # if (current_trigger == true) && (prev_trigger == false)
+                                # send on signal and set off timer X secons
+
+                            #if (current_trigger == true
+                            #send_trigger = 
+                            # Send over midi if triggered and we have midi
+                            #if current_trigger and output:
+                                # Determine note to send
+                            #    note = sensors[s]["midiChannel"]
+
                                 # Send MIDI note
-                                note = sensors[s]["midiChannel"]
-                                msg = mido.Message('note_on', note=note)
-                                output.send(msg)
-                                logEvent(f'midi;on;{s}')
-                                print(f"[MIDI] Note ON channel {note} from sensor {s}")
-                            sensors[s]['noteLock'] = True
+                            #    msg = mido.Message('note_on', note=note)
+                            #    output.send(msg)
+                            #    print(f"[MIDI] Note on channel {note} from sensor {s}")
+                            #33    #asyncio.create_task(setTriggerTimeout(3, sendMidiOff()))
 
-                        if current_trigger == True:
-                            #print(len(timeout_tasks))
-                            if len(timeout_tasks) == 0:
-                            #if sensors[s]["timeoutTasks"]: 
-                                # set first timeout task
-                                sensors[s]["timeoutTasks"].append(asyncio.create_task(setTriggerTimeout(3, sendMidiOff(s, output))))
-                                #sensors[s]["timeoutTasks"] = asyncio.create_task(setTriggerTimeout(3, sendMidiOff()))
-                            else:
-                                for my_task in sensors[s]["timeoutTasks"]:
-                                    if not my_task.cancelled():
-                                        #print('cancelling')
-                                        my_task.cancel()
-                                    else:
-                                        #print('not cancelling')
-                                        my_task = None
-                                #print('setting')
-                                #print('reserting')
-                                sensors[s]["timeoutTasks"].append(asyncio.create_task(setTriggerTimeout(3, sendMidiOff(s, output))))
-                            # pop last push first out
-                        # Take action only if the previous states were off
-                        ## check if there are active coroutines
-                        # if (current_trigger == true) && (prev_trigger == false)
-                            # send on signal and set off timer X secons
+                                # Add to simultaneous output
+                            #simultaneous += 1
 
-                        #if (current_trigger == true
-                        #send_trigger = 
-                        # Send over midi if triggered and we have midi
-                        #if current_trigger and output:
-                            # Determine note to send
-                        #    note = sensors[s]["midiChannel"]
+                            # TODO fix websockets and simultaneous
+                            # Send over websockets
+                            await websocket.send(json.dumps({
+                                'value': distance,
+                                'sensor': s,
+                                'trigger': current_trigger,
+                                'threshold': sensors[s]["threshold"]
+                            }))
+                            #except:
+                            #    print(f"[{s}] Failed reading")
+                            
+                            # Safety sleep between each sensor
+                            time.sleep(0.01)
+                    except:
+                        pass
 
-                            # Send MIDI note
-                        #    msg = mido.Message('note_on', note=note)
-                        #    output.send(msg)
-                        #    print(f"[MIDI] Note on channel {note} from sensor {s}")
-                        #33    #asyncio.create_task(setTriggerTimeout(3, sendMidiOff()))
-
-                            # Add to simultaneous output
-                        #simultaneous += 1
-
-                        # TODO fix websockets and simultaneous
-                        # Send over websockets
-                        await websocket.send(json.dumps({
-                            'value': distance,
-                            'sensor': s,
-                            'trigger': current_trigger,
-                            'threshold': sensors[s]["threshold"]
-                        }))
-                        #except:
-                        #    print(f"[{s}] Failed reading")
-                        
-                        # Safety sleep between each sensor
-                        time.sleep(0.1)
+            for j in sensors:
+                if sensors[j]['noteLock'] == True:
+                    simul += 1
 
             # Send special note if multiple sensors triggered at once
-            if (simultaneous >= 2) and output:
+            if (simul >= 2) and output:
+                #print(simul)
                 # Start counting channels at 70 for each simulataneous sense
-                note = 70+simultaneous
+                note = 70+simul
 
                 # Send MIDI note
                 msg = mido.Message('note_on', note=note)
                 output.send(msg)
-                print(f"[MIDI] Simultaneous {simultaneous} sensors detected, sending note {note}")
+                #print(f"[MIDI] Simultaneous {simul} sensors detected, sending note {note}")
 
             # Safety sleep between each loop
-            await asyncio.sleep(0.01)
+            await asyncio.sleep(0.1)
             # time.sleep(1)
 
 
@@ -382,6 +453,8 @@ if __name__ == "__main__":
     # Setup the GPIO for each sensor
     for sensor in sensors:
         setupSensor(sensor)
+
+    #print(simul)
 
     # Start async event loop
     asyncio.get_event_loop().run_until_complete(hello())
